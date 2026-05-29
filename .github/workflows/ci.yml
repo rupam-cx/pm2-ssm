@@ -30,7 +30,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
 
 # ---------------------------
-# 2. CHANGE DETECTION
+# 2. CHANGE DETECTION (COST OPTIMIZATION)
 # ---------------------------
   changes:
     runs-on: ubuntu-latest
@@ -68,13 +68,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set IMAGE TAG
@@ -94,7 +94,7 @@ jobs:
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
 # ---------------------------
-# 4. DEPLOY VIA SSM (YOUR FIXED VERSION)
+# 4. DEPLOY VIA SSM
 # ---------------------------
   deploy:
     runs-on: ubuntu-latest
@@ -107,7 +107,7 @@ jobs:
 
     steps:
 
-      - name: Configure AWS Credentials (FIX)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -129,7 +129,7 @@ jobs:
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
-# 5. NOTIFICATION (OPTIONAL SAFE VERSION)
+# 5. SNS NOTIFICATION (FINAL FIXED)
 # ---------------------------
   notify:
     runs-on: ubuntu-latest
@@ -138,18 +138,21 @@ jobs:
 
     steps:
 
-      - name: Send Email Notification
-        uses: dawidd6/action-send-mail@v3
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          server_address: smtp.office365.com
-          server_port: 587
-          secure: starttls
-          username: ${{ secrets.OUTLOOK_EMAIL }}
-          password: ${{ secrets.OUTLOOK_PASSWORD }}
-          subject: "CI/CD Status: ${{ needs.deploy.result }}"
-          to: ${{ secrets.OUTLOOK_EMAIL }}
-          from: GitHub CI/CD Bot
-          body: |
-            Pipeline Status: ${{ needs.deploy.result }}
-            Repo: ${{ github.repository }}
-            Commit: ${{ github.sha }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Send SNS Notification
+        run: |
+          STATUS="${{ needs.deploy.result }}"
+          REPO="${{ github.repository }}"
+          COMMIT="${{ github.sha }}"
+
+          aws sns publish \
+            --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
+            --subject "CI/CD Pipeline: $STATUS" \
+            --message "Status: $STATUS
+Repo: $REPO
+Commit: $COMMIT"
