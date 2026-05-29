@@ -1,38 +1,89 @@
 services:
+
   mysql:
     image: mysql:8.0
-    command: ["--default-authentication-plugin=mysql_native_password"]
+
+    container_name: mysql-db
+
+    command:
+      - --default-authentication-plugin=mysql_native_password
+
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: test_db
       MYSQL_USER: appuser
       MYSQL_PASSWORD: apppass
-    ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+
+    restart: unless-stopped
+
     volumes:
       - mysql_data:/var/lib/mysql
 
-  app:
-    build: .
-    image: 3-tier-nodejs-mysql-docker-app
+  app1:
+    image: 585853585762.dkr.ecr.ap-south-1.amazonaws.com/pm2-ssm-app:latest
+
+    container_name: app1
+
     depends_on:
-      mysql:
-        condition: service_healthy
+      - mysql
+
     environment:
       DB_HOST: mysql
       DB_NAME: test_db
       DB_USER: appuser
-      DB_PASS: apppass          
-      DB_PASSWORD: apppass      
-      DATABASE_URL: mysql://appuser:apppass@mysql:3306/test_db  
+      DB_PASS: apppass
+      DB_PASSWORD: apppass
+      DATABASE_URL: mysql://appuser:apppass@mysql:3306/test_db
+      NODE_ENV: production
+
     ports:
-      - "5000:5000"
+      - "5001:5000"
+
+    restart: unless-stopped
+
+  app2:
+    image: 585853585762.dkr.ecr.ap-south-1.amazonaws.com/pm2-ssm-app:latest
+
+    container_name: app2
+
+    depends_on:
+      - mysql
+
+    environment:
+      DB_HOST: mysql
+      DB_NAME: test_db
+      DB_USER: appuser
+      DB_PASS: apppass
+      DB_PASSWORD: apppass
+      DATABASE_URL: mysql://appuser:apppass@mysql:3306/test_db
+      NODE_ENV: production
+
+    ports:
+      - "5002:5000"
+
+    restart: unless-stopped
+
+  app3:
+    image: 585853585762.dkr.ecr.ap-south-1.amazonaws.com/pm2-ssm-app:latest
+
+    container_name: app3
+
+    depends_on:
+      - mysql
+
+    environment:
+      DB_HOST: mysql
+      DB_NAME: test_db
+      DB_USER: appuser
+      DB_PASS: apppass
+      DB_PASSWORD: apppass
+      DATABASE_URL: mysql://appuser:apppass@mysql:3306/test_db
+      NODE_ENV: production
+
+    ports:
+      - "5003:5000"
+
+    restart: unless-stopped
 
 volumes:
   mysql_data:
-

@@ -1,0 +1,53 @@
+FROM node:20-alpine
+
+# =========================
+# FRONTEND BUILD
+# =========================
+
+WORKDIR /usr/src/app/client
+
+COPY client/package*.json ./
+
+RUN npm install
+
+COPY client/ ./
+
+RUN npm run build
+
+# =========================
+# BACKEND SETUP
+# =========================
+
+WORKDIR /usr/src/app/server
+
+COPY server/package*.json ./
+
+RUN npm install --omit=dev
+
+# Install PM2 globally
+RUN npm install -g pm2
+
+COPY server/ ./
+
+# Copy frontend build into backend public folder
+RUN mkdir -p ./public && cp -R /usr/src/app/client/public/* ./public/
+
+ENV NODE_ENV=production
+
+# =========================
+# SECURITY
+# =========================
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+RUN chown -R appuser:appgroup /usr/src/app
+
+USER appuser
+
+EXPOSE 5000
+
+# =========================
+# PM2 RUNTIME
+# =========================
+
+CMD ["pm2-runtime", "server.js"]
