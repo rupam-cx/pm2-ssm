@@ -26,7 +26,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Run Gitleaks
+      - name: Gitleaks Scan
         uses: gitleaks/gitleaks-action@v2
 
 # ---------------------------
@@ -68,19 +68,19 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set IMAGE TAG
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
-      - name: Build Image
+      - name: Build Docker Image
         run: |
           docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
 
@@ -89,21 +89,31 @@ jobs:
           docker tag $ECR_REPO:$IMAGE_TAG \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
-      - name: Push Image
+      - name: Push Image to ECR
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
 # ---------------------------
-# 4. DEPLOY VIA SSM
+# 4. DEPLOY VIA SSM (YOUR FIXED VERSION)
 # ---------------------------
   deploy:
     runs-on: ubuntu-latest
     needs: build
     if: always()
 
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
 
-      - name: Deploy to EC2 via SSM
+      - name: Configure AWS Credentials (FIX)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy using SSM
         run: |
           aws ssm send-command \
             --instance-ids "${{ secrets.INSTANCE_ID }}" \
@@ -119,7 +129,7 @@ jobs:
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
-# 5. NOTIFICATION (STABLE - NO PYTHON, NO ERRORS)
+# 5. NOTIFICATION (OPTIONAL SAFE VERSION)
 # ---------------------------
   notify:
     runs-on: ubuntu-latest
