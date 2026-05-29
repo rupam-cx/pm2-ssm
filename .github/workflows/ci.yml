@@ -138,13 +138,10 @@ jobs:
           REPO="${{ github.repository }}"
           COMMIT="${{ github.sha }}"
 
-          MESSAGE=$(cat <<EOF
-CI/CD Pipeline Result:
-Status: $STATUS
-Repo: $REPO
-Commit: $COMMIT
-EOF
-)
+          MESSAGE="CI/CD Pipeline Result:
+          Status: $STATUS
+          Repo: $REPO
+          Commit: $COMMIT"
 
           aws sns publish \
             --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
