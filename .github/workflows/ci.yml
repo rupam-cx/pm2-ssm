@@ -21,11 +21,12 @@ jobs:
 # ---------------------------
   security:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Run Gitleaks Scan
+      - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
 
 # ---------------------------
@@ -41,7 +42,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Detect changes
+      - name: Detect Changes
         id: filter
         run: |
           CHANGED=$(git diff --name-only HEAD~1 HEAD)
@@ -67,28 +68,28 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set IMAGE TAG
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
-      - name: Build Docker Image
+      - name: Build Image
         run: |
           docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
 
-      - name: Tag Docker Image
+      - name: Tag Image
         run: |
           docker tag $ECR_REPO:$IMAGE_TAG \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
-      - name: Push Docker Image
+      - name: Push Image
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
@@ -102,7 +103,7 @@ jobs:
 
     steps:
 
-      - name: Deploy using AWS SSM
+      - name: Deploy to EC2 via SSM
         run: |
           aws ssm send-command \
             --instance-ids "${{ secrets.INSTANCE_ID }}" \
@@ -118,7 +119,7 @@ jobs:
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
-# 5. NOTIFICATION (CLEAN & FIXED)
+# 5. NOTIFICATION (STABLE - NO PYTHON, NO ERRORS)
 # ---------------------------
   notify:
     runs-on: ubuntu-latest
@@ -128,34 +129,17 @@ jobs:
     steps:
 
       - name: Send Email Notification
-        run: |
-          python3 -c "
-import smtplib
-from email.mime.text import MIMEText
-import os
-
-sender = os.environ['OUTLOOK_EMAIL']
-password = os.environ['OUTLOOK_PASSWORD']
-receiver = sender
-
-status = '${{ needs.deploy.result }}'
-repo = '${{ github.repository }}'
-commit = '${{ github.sha }}'
-
-subject = f'CI/CD Pipeline Status: {status}'
-body = f'Repo: {repo}\nCommit: {commit}\nStatus: {status}'
-
-msg = MIMEText(body)
-msg['Subject'] = subject
-msg['From'] = sender
-msg['To'] = receiver
-
-server = smtplib.SMTP('smtp.office365.com', 587)
-server.starttls()
-server.login(sender, password)
-server.sendmail(sender, receiver, msg.as_string())
-server.quit()
-"
-        env:
-          OUTLOOK_EMAIL: ${{ secrets.OUTLOOK_EMAIL }}
-          OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: starttls
+          username: ${{ secrets.OUTLOOK_EMAIL }}
+          password: ${{ secrets.OUTLOOK_PASSWORD }}
+          subject: "CI/CD Status: ${{ needs.deploy.result }}"
+          to: ${{ secrets.OUTLOOK_EMAIL }}
+          from: GitHub CI/CD Bot
+          body: |
+            Pipeline Status: ${{ needs.deploy.result }}
+            Repo: ${{ github.repository }}
+            Commit: ${{ github.sha }}
