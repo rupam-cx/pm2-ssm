@@ -21,7 +21,6 @@ jobs:
 # ---------------------------
   security:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -36,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docker_changed: ${{ steps.filter.outputs.changed }}
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,7 +59,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.docker_changed == 'true'
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -79,17 +76,14 @@ jobs:
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Build Docker Image
-        run: |
-          docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
+        run: docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
 
       - name: Tag Image
-        run: |
-          docker tag $ECR_REPO:$IMAGE_TAG \
+        run: docker tag $ECR_REPO:$IMAGE_TAG \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
       - name: Push Image
-        run: |
-          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+        run: docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
 # ---------------------------
 # 4. DEPLOY VIA SSM
@@ -98,7 +92,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: always()
-
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -122,13 +115,12 @@ jobs:
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
-# 5. SNS NOTIFICATION (FIXED)
+# 5. SNS NOTIFICATION
 # ---------------------------
   notify:
     runs-on: ubuntu-latest
     needs: deploy
     if: always()
-
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
