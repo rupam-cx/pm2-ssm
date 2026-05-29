@@ -79,11 +79,13 @@ jobs:
         run: docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
 
       - name: Tag Image
-        run: docker tag $ECR_REPO:$IMAGE_TAG \
+        run: >
+          docker tag $ECR_REPO:$IMAGE_TAG
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
       - name: Push Image
-        run: docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+        run: >
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
 # ---------------------------
 # 4. DEPLOY VIA SSM
@@ -104,12 +106,16 @@ jobs:
           aws ssm send-command \
             --instance-ids "${{ secrets.INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters '{"commands":["cd /home/ubuntu/app",
-              "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com",
-              "docker compose pull",
-              "docker compose down",
-              "docker compose up -d",
-              "docker image prune -f"]}' \
+            --parameters '{
+              "commands":[
+                "cd /home/ubuntu/app",
+                "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com",
+                "docker compose pull",
+                "docker compose down",
+                "docker compose up -d",
+                "docker image prune -f"
+              ]
+            }' \
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
