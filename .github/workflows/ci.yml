@@ -1,10 +1,135 @@
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPO: ${{ secrets.ECR_REPOSITORY }}
+
+jobs:
+
+# ---------------------------
+# 1. SECURITY SCAN
+# ---------------------------
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+# ---------------------------
+# 2. CHANGE DETECTION (COST OPTIMIZATION)
+# ---------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docker_changed: ${{ steps.filter.outputs.changed }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes
+        id: filter
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -E 'Dockerfile|server/|client/|dockerfile-2'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+# ---------------------------
+# 3. BUILD & PUSH TO ECR
+# ---------------------------
+  build:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docker_changed == 'true'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set Image Tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
+
+      - name: Build Docker Image
+        run: |
+          docker build -t $ECR_REPO:$IMAGE_TAG -f dockerfile-2 .
+
+      - name: Tag Image
+        run: |
+          docker tag $ECR_REPO:$IMAGE_TAG \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+
+      - name: Push Image
+        run: |
+          docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+
+# ---------------------------
+# 4. DEPLOY VIA SSM
+# ---------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='[
+              "cd /home/ubuntu/app",
+              "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com",
+              "docker compose pull",
+              "docker compose down",
+              "docker compose up -d",
+              "docker image prune -f"
+            ]' \
+            --region ${{ secrets.AWS_REGION }}
+
+# ---------------------------
+# 5. SNS NOTIFICATION (FIXED)
+# ---------------------------
   notify:
     runs-on: ubuntu-latest
     needs: deploy
     if: always()
 
     steps:
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -24,5 +149,5 @@ Commit: $COMMIT"
 
           aws sns publish \
             --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
-            --subject "CI/CD Pipeline: $STATUS" \
+            --subject "CI/CD Status: $STATUS" \
             --message "$MESSAGE"
