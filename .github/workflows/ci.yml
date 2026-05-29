@@ -21,7 +21,6 @@ jobs:
 # ---------------------------
   security:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -30,7 +29,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
 
 # ---------------------------
-# 2. DETECT CHANGES (COST OPTIMIZATION)
+# 2. DETECT CHANGES
 # ---------------------------
   changes:
     runs-on: ubuntu-latest
@@ -39,23 +38,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Detect changes
         id: filter
         run: |
-          git fetch origin main
-          CHANGED=$(git diff --name-only origin/main HEAD)
+          CHANGED=$(git diff --name-only HEAD~1 HEAD)
 
           echo "$CHANGED"
 
-          if echo "$CHANGED" | grep -E 'Dockerfile|server/|client/'; then
+          if echo "$CHANGED" | grep -E 'Dockerfile|server/|client/|dockerfile-2'; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
 # ---------------------------
-# 3. BUILD + PUSH TO ECR (ONLY IF CHANGED)
+# 3. BUILD + PUSH TO ECR
 # ---------------------------
   build:
     runs-on: ubuntu-latest
@@ -67,16 +67,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set IMAGE TAG (commit SHA)
+      - name: Set IMAGE TAG
         run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
       - name: Build Docker Image
@@ -88,7 +88,7 @@ jobs:
           docker tag $ECR_REPO:$IMAGE_TAG \
           $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
-      - name: Push Image to ECR
+      - name: Push Image
         run: |
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
 
@@ -102,9 +102,8 @@ jobs:
 
     steps:
 
-      - name: Deploy to EC2 via SSM
+      - name: Deploy using SSM
         run: |
-
           aws ssm send-command \
             --instance-ids "${{ secrets.INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
@@ -119,7 +118,7 @@ jobs:
             --region ${{ secrets.AWS_REGION }}
 
 # ---------------------------
-# 5. NOTIFICATION (OUTLOOK SMTP)
+# 5. NOTIFICATION (FIXED)
 # ---------------------------
   notify:
     runs-on: ubuntu-latest
@@ -137,14 +136,17 @@ jobs:
 
           sender = os.environ["OUTLOOK_EMAIL"]
           password = os.environ["OUTLOOK_PASSWORD"]
-
           receiver = sender
 
-          subject = "CI/CD Pipeline Status: ${{ job.status }}"
+          status = "${{ needs.deploy.result }}"
+          commit = "${{ github.sha }}"
+          repo = "${{ github.repository }}"
+
+          subject = f"CI/CD Pipeline Status: {status}"
           body = f"""
-Status: ${{ job.status }}
-Repo: ${{ github.repository }}
-Commit: ${{ github.sha }}
+Status: {status}
+Repo: {repo}
+Commit: {commit}
 """
 
           msg = MIMEText(body)
@@ -158,6 +160,7 @@ Commit: ${{ github.sha }}
           server.sendmail(sender, receiver, msg.as_string())
           server.quit()
           EOF
+
         env:
           OUTLOOK_EMAIL: ${{ secrets.OUTLOOK_EMAIL }}
           OUTLOOK_PASSWORD: ${{ secrets.OUTLOOK_PASSWORD }}
